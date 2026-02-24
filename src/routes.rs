@@ -1,8 +1,8 @@
 use rocket::serde::json::Json;
 use rocket_okapi::openapi;
-use crate::models::{ApiInfo, ServerInfo, ErrorResponse, CreateServerRequest, ServerResponse};
+use crate::models::{ApiInfo, ServerInfo, ErrorResponse, CreateServerRequest, ServerResponse, PaginatedServersResponse};
 use crate::services::MatrixService;
-use crate::db::{establish_connection, insert_server, get_server_by_domain, get_all_servers};
+use crate::db::{establish_connection, insert_server, get_server_by_domain, get_filtered_servers, ServerFilter};
 
 #[openapi]
 #[get("/")]
@@ -76,8 +76,14 @@ pub async fn add_server(request: Json<CreateServerRequest>) -> Result<Json<Serve
                 domain: &request.domain,
                 name: discovered.name.as_deref(),
                 description: discovered.description.as_deref(),
+                logo_url: discovered.logo_url.as_deref(),
+                theme: discovered.theme.as_deref(),
                 registration_open: discovered.registration_open,
                 public_rooms_count: discovered.public_rooms_count,
+                version: discovered.version.as_deref(),
+                federation_version: discovered.federation_version.as_deref(),
+                delegated_server: discovered.delegated_server.as_deref(),
+                room_versions: discovered.room_versions.as_deref(),
             };
 
             match insert_server(&mut conn, &new_server) {
@@ -86,10 +92,16 @@ pub async fn add_server(request: Json<CreateServerRequest>) -> Result<Json<Serve
                     domain: server.domain,
                     name: server.name,
                     description: server.description,
+                    logo_url: server.logo_url,
+                    theme: server.theme,
                     registration_open: server.registration_open,
                     public_rooms_count: server.public_rooms_count,
-                    created_at: server.created_at.parse().unwrap(),
-                    updated_at: server.updated_at.parse().unwrap(),
+                    version: server.version,
+                    federation_version: server.federation_version,
+                    delegated_server: server.delegated_server,
+                    room_versions: server.room_versions,
+                    created_at: server.created_at,
+                    updated_at: server.updated_at,
                 })),
                 Err(e) => Err(Json(ErrorResponse {
                     error: "database_error".to_string(),
@@ -106,22 +118,94 @@ pub async fn add_server(request: Json<CreateServerRequest>) -> Result<Json<Serve
 
 #[openapi]
 #[get("/servers")]
-pub fn list_servers() -> Result<Json<Vec<ServerResponse>>, Json<ErrorResponse>> {
+pub fn list_servers() -> Result<Json<PaginatedServersResponse>, Json<ErrorResponse>> {
     let mut conn = establish_connection();
     
-    match get_all_servers(&mut conn) {
-        Ok(servers) => {
-            let responses: Vec<ServerResponse> = servers.into_iter().map(|s| ServerResponse {
+    let filter = ServerFilter::default();
+    
+    match get_filtered_servers(&mut conn, &filter) {
+        Ok(result) => {
+            let responses = result.servers.into_iter().map(|s| ServerResponse {
                 id: s.id,
                 domain: s.domain,
                 name: s.name,
                 description: s.description,
+                logo_url: s.logo_url,
+                theme: s.theme,
                 registration_open: s.registration_open,
                 public_rooms_count: s.public_rooms_count,
-                created_at: s.created_at.parse().unwrap(),
-                updated_at: s.updated_at.parse().unwrap(),
+                version: s.version,
+                federation_version: s.federation_version,
+                delegated_server: s.delegated_server,
+                room_versions: s.room_versions,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
             }).collect();
-            Ok(Json(responses))
+            
+            Ok(Json(PaginatedServersResponse {
+                servers: responses,
+                total: result.total,
+                limit: result.limit,
+                offset: result.offset,
+            }))
+        },
+        Err(e) => Err(Json(ErrorResponse {
+            error: "database_error".to_string(),
+            message: format!("Failed to fetch servers: {}", e),
+        })),
+    }
+}
+
+#[openapi]
+#[get("/servers/search?<search>&<registration_open>&<has_rooms>&<room_version>&<sort_by>&<sort_order>&<limit>&<offset>")]
+pub fn search_servers(
+    search: Option<String>,
+    registration_open: Option<bool>,
+    has_rooms: Option<bool>,
+    room_version: Option<String>,
+    sort_by: Option<String>,
+    sort_order: Option<String>,
+    limit: Option<i32>,
+    offset: Option<i32>,
+) -> Result<Json<PaginatedServersResponse>, Json<ErrorResponse>> {
+    let mut conn = establish_connection();
+    
+    let filter = ServerFilter {
+        search,
+        registration_open,
+        has_rooms,
+        room_version,
+        sort_by,
+        sort_order,
+        limit,
+        offset,
+    };
+    
+    match get_filtered_servers(&mut conn, &filter) {
+        Ok(result) => {
+            let responses = result.servers.into_iter().map(|s| ServerResponse {
+                id: s.id,
+                domain: s.domain,
+                name: s.name,
+                description: s.description,
+                logo_url: s.logo_url,
+                theme: s.theme,
+                registration_open: s.registration_open,
+                public_rooms_count: s.public_rooms_count,
+                version: s.version,
+                federation_version: s.federation_version,
+                delegated_server: s.delegated_server,
+                room_versions: s.room_versions,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+            }).collect();
+            
+            Ok(Json(PaginatedServersResponse {
+                servers: responses,
+                total: result.total,
+                limit: result.limit,
+                offset: result.offset,
+            }))
         },
         Err(e) => Err(Json(ErrorResponse {
             error: "database_error".to_string(),
