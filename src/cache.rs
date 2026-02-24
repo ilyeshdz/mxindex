@@ -1,6 +1,6 @@
-use redis::{aio::ConnectionManager, Client, RedisError};
 use redis::AsyncCommands;
-use serde::{de::DeserializeOwned, Serialize};
+use redis::{Client, RedisError, aio::ConnectionManager};
+use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -39,9 +39,9 @@ impl Cache {
     pub async fn get<T: DeserializeOwned>(&self, key: &str) -> Result<T, CacheError> {
         let mut guard = self.connection.write().await;
         let conn = guard.as_mut().ok_or(CacheError::NotInitialized)?;
-        
+
         let value: Option<String> = conn.get(key).await?;
-        
+
         match value {
             Some(data) => {
                 let parsed: T = serde_json::from_str(&data)?;
@@ -51,12 +51,17 @@ impl Cache {
         }
     }
 
-    pub async fn set<T: Serialize>(&self, key: &str, value: &T, ttl_seconds: usize) -> Result<(), CacheError> {
+    pub async fn set<T: Serialize>(
+        &self,
+        key: &str,
+        value: &T,
+        ttl_seconds: usize,
+    ) -> Result<(), CacheError> {
         let mut guard = self.connection.write().await;
         let conn = guard.as_mut().ok_or(CacheError::NotInitialized)?;
-        
+
         let data = serde_json::to_string(value)?;
-        
+
         let _: () = redis::cmd("SET")
             .arg(key)
             .arg(data)
@@ -64,22 +69,23 @@ impl Cache {
             .arg(ttl_seconds as u64)
             .query_async(conn)
             .await?;
-        
+
         Ok(())
     }
 
     pub async fn delete(&self, key: &str) -> Result<(), CacheError> {
         let mut guard = self.connection.write().await;
         let conn = guard.as_mut().ok_or(CacheError::NotInitialized)?;
-        
-        let result: usize = conn.del(key).await?;
+
+        let _result: usize = conn.del(key).await?;
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn exists(&self, key: &str) -> Result<bool, CacheError> {
         let mut guard = self.connection.write().await;
         let conn = guard.as_mut().ok_or(CacheError::NotInitialized)?;
-        
+
         let exists: bool = conn.exists(key).await?;
         Ok(exists)
     }
@@ -87,10 +93,10 @@ impl Cache {
     pub async fn invalidate_pattern(&self, pattern: &str) -> Result<(), CacheError> {
         let mut guard = self.connection.write().await;
         let conn = guard.as_mut().ok_or(CacheError::NotInitialized)?;
-        
+
         let mut keys = Vec::new();
         let mut cursor = 0i64;
-        
+
         loop {
             let (next_cursor, batch): (i64, Vec<String>) = redis::cmd("SCAN")
                 .arg(cursor)
@@ -100,22 +106,22 @@ impl Cache {
                 .arg(100)
                 .query_async(conn)
                 .await?;
-            
+
             keys.extend(batch);
             cursor = next_cursor;
-            
+
             if cursor == 0 {
                 break;
             }
         }
-        
+
         if !keys.is_empty() {
             let _: () = redis::cmd("DEL")
                 .arg(keys.as_slice())
                 .query_async(conn)
                 .await?;
         }
-        
+
         Ok(())
     }
 }
@@ -126,6 +132,7 @@ impl Default for Cache {
     }
 }
 
+#[allow(dead_code)]
 pub fn cache_key(prefix: &str, parts: &[&str]) -> String {
     let mut key = prefix.to_string();
     for part in parts {
@@ -133,4 +140,54 @@ pub fn cache_key(prefix: &str, parts: &[&str]) -> String {
         key.push_str(part);
     }
     key
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cache_key_single_part() {
+        let key = cache_key("servers", &["matrix.org"]);
+        assert_eq!(key, "servers:matrix.org");
+    }
+
+    #[test]
+    fn test_cache_key_multiple_parts() {
+        let key = cache_key("server", &["info", "matrix.org"]);
+        assert_eq!(key, "server:info:matrix.org");
+    }
+
+    #[test]
+    fn test_cache_key_no_parts() {
+        let key = cache_key("servers", &[]);
+        assert_eq!(key, "servers");
+    }
+
+    #[test]
+    fn test_cache_new() {
+        let cache = Cache::new();
+        assert!(cache.connection.try_read().is_ok());
+    }
+
+    #[test]
+    fn test_cache_default() {
+        let cache = Cache::default();
+        assert!(cache.connection.try_read().is_ok());
+    }
+
+    #[test]
+    fn test_cache_error_display() {
+        let err = CacheError::NotFound;
+        assert_eq!(err.to_string(), "Cache not found");
+
+        let err = CacheError::NotInitialized;
+        assert_eq!(err.to_string(), "Connection not initialized");
+    }
+
+    #[test]
+    fn test_cache_error_serialization() {
+        let err = CacheError::Serialization(serde_json::from_str::<()>("invalid").unwrap_err());
+        assert!(err.to_string().contains("Serialization error"));
+    }
 }

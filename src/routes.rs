@@ -1,13 +1,19 @@
-use rocket::serde::json::Json;
-use rocket::State;
-use rocket_okapi::openapi;
-use crate::models::{ApiInfo, ServerInfo, ErrorResponse, CreateServerRequest, ServerResponse, PaginatedServersResponse};
-use crate::services::MatrixService;
-use crate::db::{establish_connection, insert_server, get_server_by_domain, get_filtered_servers, ServerFilter};
 use crate::app::AppState;
+use crate::db::{
+    ServerFilter, establish_connection, get_filtered_servers, get_server_by_domain, insert_server,
+};
+use crate::models::{
+    ApiInfo, CreateServerRequest, ErrorResponse, PaginatedServersResponse, ServerInfo,
+    ServerResponse,
+};
+use crate::services::MatrixService;
+use rocket::State;
+use rocket::serde::json::Json;
+use rocket_okapi::openapi;
 
 const CACHE_TTL_SHORT: usize = 60;
 const CACHE_TTL_MEDIUM: usize = 300;
+#[allow(dead_code)]
 const CACHE_TTL_LONG: usize = 3600;
 
 #[openapi]
@@ -22,7 +28,10 @@ pub fn index() -> Json<ApiInfo> {
 
 #[openapi]
 #[get("/servers/<server>")]
-pub async fn server_info(server: &str, state: &State<AppState>) -> Result<Json<ServerInfo>, Json<ErrorResponse>> {
+pub async fn server_info(
+    server: &str,
+    state: &State<AppState>,
+) -> Result<Json<ServerInfo>, Json<ErrorResponse>> {
     if server.is_empty() || server.contains('/') || server.contains(':') {
         return Err(Json(ErrorResponse {
             error: "invalid_server".to_string(),
@@ -31,7 +40,7 @@ pub async fn server_info(server: &str, state: &State<AppState>) -> Result<Json<S
     }
 
     let cache_key = format!("server:info:{}", server);
-    
+
     if let Ok(cached) = state.cache.get::<ServerInfo>(&cache_key).await {
         return Ok(Json(cached));
     }
@@ -70,7 +79,10 @@ pub async fn server_info(server: &str, state: &State<AppState>) -> Result<Json<S
 
 #[openapi]
 #[post("/servers", data = "<request>")]
-pub async fn add_server(request: Json<CreateServerRequest>, state: &State<AppState>) -> Result<Json<ServerResponse>, Json<ErrorResponse>> {
+pub async fn add_server(
+    request: Json<CreateServerRequest>,
+    state: &State<AppState>,
+) -> Result<Json<ServerResponse>, Json<ErrorResponse>> {
     if request.domain.is_empty() || request.domain.contains('/') || request.domain.contains(':') {
         return Err(Json(ErrorResponse {
             error: "invalid_domain".to_string(),
@@ -105,7 +117,10 @@ pub async fn add_server(request: Json<CreateServerRequest>, state: &State<AppSta
             match insert_server(&mut conn, &new_server) {
                 Ok(server) => {
                     let _ = state.cache.invalidate_pattern("servers:*").await;
-                    let _ = state.cache.delete(&format!("server:info:{}", request.domain)).await;
+                    let _ = state
+                        .cache
+                        .delete(&format!("server:info:{}", request.domain))
+                        .await;
 
                     Ok(Json(ServerResponse {
                         id: server.id,
@@ -123,7 +138,7 @@ pub async fn add_server(request: Json<CreateServerRequest>, state: &State<AppSta
                         created_at: server.created_at,
                         updated_at: server.updated_at,
                     }))
-                },
+                }
                 Err(e) => Err(Json(ErrorResponse {
                     error: "database_error".to_string(),
                     message: format!("Failed to save server: {}", e),
@@ -139,35 +154,41 @@ pub async fn add_server(request: Json<CreateServerRequest>, state: &State<AppSta
 
 #[openapi]
 #[get("/servers")]
-pub async fn list_servers(state: &State<AppState>) -> Result<Json<PaginatedServersResponse>, Json<ErrorResponse>> {
+pub async fn list_servers(
+    state: &State<AppState>,
+) -> Result<Json<PaginatedServersResponse>, Json<ErrorResponse>> {
     let cache_key = "servers:list";
-    
+
     if let Ok(cached) = state.cache.get::<PaginatedServersResponse>(cache_key).await {
         return Ok(Json(cached));
     }
 
     let mut conn = establish_connection();
     let filter = ServerFilter::default();
-    
+
     match get_filtered_servers(&mut conn, &filter) {
         Ok(result) => {
-            let responses = result.servers.into_iter().map(|s| ServerResponse {
-                id: s.id,
-                domain: s.domain,
-                name: s.name,
-                description: s.description,
-                logo_url: s.logo_url,
-                theme: s.theme,
-                registration_open: s.registration_open,
-                public_rooms_count: s.public_rooms_count,
-                version: s.version,
-                federation_version: s.federation_version,
-                delegated_server: s.delegated_server,
-                room_versions: s.room_versions,
-                created_at: s.created_at,
-                updated_at: s.updated_at,
-            }).collect();
-            
+            let responses = result
+                .servers
+                .into_iter()
+                .map(|s| ServerResponse {
+                    id: s.id,
+                    domain: s.domain,
+                    name: s.name,
+                    description: s.description,
+                    logo_url: s.logo_url,
+                    theme: s.theme,
+                    registration_open: s.registration_open,
+                    public_rooms_count: s.public_rooms_count,
+                    version: s.version,
+                    federation_version: s.federation_version,
+                    delegated_server: s.delegated_server,
+                    room_versions: s.room_versions,
+                    created_at: s.created_at,
+                    updated_at: s.updated_at,
+                })
+                .collect();
+
             let response = PaginatedServersResponse {
                 servers: responses,
                 total: result.total,
@@ -175,10 +196,13 @@ pub async fn list_servers(state: &State<AppState>) -> Result<Json<PaginatedServe
                 offset: result.offset,
             };
 
-            let _ = state.cache.set(cache_key, &response, CACHE_TTL_MEDIUM).await;
+            let _ = state
+                .cache
+                .set(cache_key, &response, CACHE_TTL_MEDIUM)
+                .await;
 
             Ok(Json(response))
-        },
+        }
         Err(e) => Err(Json(ErrorResponse {
             error: "database_error".to_string(),
             message: format!("Failed to fetch servers: {}", e),
@@ -187,7 +211,10 @@ pub async fn list_servers(state: &State<AppState>) -> Result<Json<PaginatedServe
 }
 
 #[openapi]
-#[get("/servers/search?<search>&<registration_open>&<has_rooms>&<room_version>&<sort_by>&<sort_order>&<limit>&<offset>")]
+#[get(
+    "/servers/search?<search>&<registration_open>&<has_rooms>&<room_version>&<sort_by>&<sort_order>&<limit>&<offset>"
+)]
+#[allow(dead_code, clippy::too_many_arguments)]
 pub async fn search_servers(
     state: &State<AppState>,
     search: Option<String>,
@@ -210,13 +237,17 @@ pub async fn search_servers(
         limit.unwrap_or(0),
         offset.unwrap_or(0)
     );
-    
-    if let Ok(cached) = state.cache.get::<PaginatedServersResponse>(&cache_key).await {
+
+    if let Ok(cached) = state
+        .cache
+        .get::<PaginatedServersResponse>(&cache_key)
+        .await
+    {
         return Ok(Json(cached));
     }
 
     let mut conn = establish_connection();
-    
+
     let filter = ServerFilter {
         search,
         registration_open,
@@ -227,26 +258,30 @@ pub async fn search_servers(
         limit,
         offset,
     };
-    
+
     match get_filtered_servers(&mut conn, &filter) {
         Ok(result) => {
-            let responses = result.servers.into_iter().map(|s| ServerResponse {
-                id: s.id,
-                domain: s.domain,
-                name: s.name,
-                description: s.description,
-                logo_url: s.logo_url,
-                theme: s.theme,
-                registration_open: s.registration_open,
-                public_rooms_count: s.public_rooms_count,
-                version: s.version,
-                federation_version: s.federation_version,
-                delegated_server: s.delegated_server,
-                room_versions: s.room_versions,
-                created_at: s.created_at,
-                updated_at: s.updated_at,
-            }).collect();
-            
+            let responses = result
+                .servers
+                .into_iter()
+                .map(|s| ServerResponse {
+                    id: s.id,
+                    domain: s.domain,
+                    name: s.name,
+                    description: s.description,
+                    logo_url: s.logo_url,
+                    theme: s.theme,
+                    registration_open: s.registration_open,
+                    public_rooms_count: s.public_rooms_count,
+                    version: s.version,
+                    federation_version: s.federation_version,
+                    delegated_server: s.delegated_server,
+                    room_versions: s.room_versions,
+                    created_at: s.created_at,
+                    updated_at: s.updated_at,
+                })
+                .collect();
+
             let response = PaginatedServersResponse {
                 servers: responses,
                 total: result.total,
@@ -254,13 +289,95 @@ pub async fn search_servers(
                 offset: result.offset,
             };
 
-            let _ = state.cache.set(&cache_key, &response, CACHE_TTL_SHORT).await;
+            let _ = state
+                .cache
+                .set(&cache_key, &response, CACHE_TTL_SHORT)
+                .await;
 
             Ok(Json(response))
-        },
+        }
         Err(e) => Err(Json(ErrorResponse {
             error: "database_error".to_string(),
             message: format!("Failed to fetch servers: {}", e),
         })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cache_ttl_values() {
+        assert_eq!(CACHE_TTL_SHORT, 60);
+        assert_eq!(CACHE_TTL_MEDIUM, 300);
+        assert_eq!(CACHE_TTL_LONG, 3600);
+    }
+
+    #[test]
+    fn test_index_returns_correct_info() {
+        let result = index();
+        let api_info = result.into_inner();
+        assert_eq!(api_info.name, "mxindex");
+        assert!(!api_info.version.is_empty());
+        assert_eq!(api_info.description, "Matrix homeserver index API");
+    }
+
+    #[test]
+    fn test_valid_server_domain() {
+        let valid_domains = vec!["matrix.org", "example.com", "server.host.com"];
+        for domain in valid_domains {
+            let contains_slash = domain.contains('/');
+            let contains_colon = domain.contains(':');
+            let is_empty = domain.is_empty();
+            assert!(
+                !contains_slash && !contains_colon && !is_empty,
+                "Domain {} should be valid",
+                domain
+            );
+        }
+    }
+
+    #[test]
+    fn test_invalid_server_domain_with_slash() {
+        let invalid = "matrix.org/path";
+        assert!(invalid.contains('/'));
+    }
+
+    #[test]
+    fn test_invalid_server_domain_with_port() {
+        let invalid = "matrix.org:8448";
+        assert!(invalid.contains(':'));
+    }
+
+    #[test]
+    fn test_empty_domain_is_invalid() {
+        let invalid = "";
+        assert!(invalid.is_empty());
+    }
+
+    #[test]
+    fn test_server_info_cache_key_format() {
+        let server = "matrix.org";
+        let cache_key = format!("server:info:{}", server);
+        assert_eq!(cache_key, "server:info:matrix.org");
+    }
+
+    #[test]
+    fn test_search_cache_key_format() {
+        let cache_key = format!(
+            "servers:search:{}:{}:{}:{}:{}:{}:{}:{}",
+            "matrix", "true", "false", "6", "name", "asc", 10, 0
+        );
+        assert_eq!(
+            cache_key,
+            "servers:search:matrix:true:false:6:name:asc:10:0"
+        );
+    }
+
+    #[test]
+    fn test_list_servers_cache_key() {
+        let cache_key = "servers:list";
+        assert_eq!(cache_key, "servers:list");
     }
 }

@@ -95,6 +95,7 @@ pub fn get_server_by_domain(
         .optional()
 }
 
+#[allow(dead_code)]
 pub fn get_all_servers(conn: &mut PgConnection) -> Result<Vec<Server>, diesel::result::Error> {
     use crate::schema::servers::dsl::*;
 
@@ -107,7 +108,7 @@ pub fn get_filtered_servers(
 ) -> Result<PaginatedServers, diesel::result::Error> {
     use crate::schema::servers::dsl::*;
 
-    let limit = filter.limit.unwrap_or(50).max(1).min(100);
+    let limit = filter.limit.unwrap_or(50).clamp(1, 100);
     let offset = filter.offset.unwrap_or(0).max(0);
 
     let sort_by = filter.sort_by.as_deref().unwrap_or("created_at");
@@ -211,7 +212,7 @@ pub fn get_filtered_servers(
 }
 
 pub fn run_migrations(conn: &mut PgConnection) {
-    use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 
     const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
