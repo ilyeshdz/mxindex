@@ -9,8 +9,14 @@ pub struct Server {
     pub domain: String,
     pub name: Option<String>,
     pub description: Option<String>,
+    pub logo_url: Option<String>,
+    pub theme: Option<String>,
     pub registration_open: Option<bool>,
     pub public_rooms_count: Option<i32>,
+    pub version: Option<String>,
+    pub federation_version: Option<String>,
+    pub delegated_server: Option<String>,
+    pub room_versions: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -21,8 +27,34 @@ pub struct NewServer<'a> {
     pub domain: &'a str,
     pub name: Option<&'a str>,
     pub description: Option<&'a str>,
+    pub logo_url: Option<&'a str>,
+    pub theme: Option<&'a str>,
     pub registration_open: Option<bool>,
     pub public_rooms_count: Option<i32>,
+    pub version: Option<&'a str>,
+    pub federation_version: Option<&'a str>,
+    pub delegated_server: Option<&'a str>,
+    pub room_versions: Option<&'a str>,
+}
+
+#[derive(Debug, Default)]
+pub struct ServerFilter {
+    pub search: Option<String>,
+    pub registration_open: Option<bool>,
+    pub has_rooms: Option<bool>,
+    pub room_version: Option<String>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+}
+
+#[derive(serde::Serialize)]
+pub struct PaginatedServers {
+    pub servers: Vec<Server>,
+    pub total: i64,
+    pub limit: i32,
+    pub offset: i32,
 }
 
 pub fn establish_connection() -> SqliteConnection {
@@ -68,6 +100,115 @@ pub fn get_all_servers(conn: &mut SqliteConnection) -> Result<Vec<Server>, diese
     servers.load(conn)
 }
 
+pub fn get_filtered_servers(
+    conn: &mut SqliteConnection,
+    filter: &ServerFilter,
+) -> Result<PaginatedServers, diesel::result::Error> {
+    use crate::schema::servers::dsl::*;
+
+    let limit = filter.limit.unwrap_or(50).max(1).min(100);
+    let offset = filter.offset.unwrap_or(0).max(0);
+
+    let sort_by = filter.sort_by.as_deref().unwrap_or("created_at");
+    let sort_order = filter.sort_order.as_deref().unwrap_or("desc");
+
+    let mut all_servers: Vec<Server> = servers.load(conn)?;
+
+    if let Some(ref search) = filter.search {
+        let search_lower = search.to_lowercase();
+        all_servers.retain(|s| {
+            s.domain.to_lowercase().contains(&search_lower)
+                || s.name
+                    .as_ref()
+                    .map(|n| n.to_lowercase().contains(&search_lower))
+                    .unwrap_or(false)
+                || s.description
+                    .as_ref()
+                    .map(|d| d.to_lowercase().contains(&search_lower))
+                    .unwrap_or(false)
+        });
+    }
+
+    if let Some(reg_open) = filter.registration_open {
+        all_servers.retain(|s| s.registration_open == Some(reg_open));
+    }
+
+    if let Some(has_rooms) = filter.has_rooms {
+        if has_rooms {
+            all_servers.retain(|s| s.public_rooms_count.unwrap_or(0) > 0);
+        } else {
+            all_servers.retain(|s| s.public_rooms_count.unwrap_or(0) <= 0);
+        }
+    }
+
+    if let Some(ref room_version) = filter.room_version {
+        all_servers.retain(|s| {
+            s.room_versions
+                .as_ref()
+                .map(|rv| rv.contains(room_version))
+                .unwrap_or(false)
+        });
+    }
+
+    let total = all_servers.len() as i64;
+
+    match sort_by {
+        "name" => {
+            all_servers.sort_by(|a, b| {
+                let a_name = a.name.as_deref().unwrap_or("");
+                let b_name = b.name.as_deref().unwrap_or("");
+                if sort_order == "asc" {
+                    a_name.cmp(b_name)
+                } else {
+                    b_name.cmp(a_name)
+                }
+            });
+        }
+        "domain" => {
+            all_servers.sort_by(|a, b| {
+                if sort_order == "asc" {
+                    a.domain.cmp(&b.domain)
+                } else {
+                    b.domain.cmp(&a.domain)
+                }
+            });
+        }
+        "public_rooms_count" => {
+            all_servers.sort_by(|a, b| {
+                let a_rooms = a.public_rooms_count.unwrap_or(0);
+                let b_rooms = b.public_rooms_count.unwrap_or(0);
+                if sort_order == "asc" {
+                    a_rooms.cmp(&b_rooms)
+                } else {
+                    b_rooms.cmp(&a_rooms)
+                }
+            });
+        }
+        _ => {
+            all_servers.sort_by(|a, b| {
+                if sort_order == "asc" {
+                    a.created_at.cmp(&b.created_at)
+                } else {
+                    b.created_at.cmp(&a.created_at)
+                }
+            });
+        }
+    }
+
+    let result_servers: Vec<Server> = all_servers
+        .into_iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .collect();
+
+    Ok(PaginatedServers {
+        servers: result_servers,
+        total,
+        limit,
+        offset,
+    })
+}
+
 pub fn run_migrations(conn: &mut SqliteConnection) {
     use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
@@ -86,8 +227,14 @@ mod tests {
             domain: "matrix.org",
             name: Some("Matrix.org"),
             description: Some("The Matrix.org homeserver"),
+            logo_url: Some("https://matrix.org/logo.png"),
+            theme: Some("light"),
             registration_open: Some(true),
             public_rooms_count: Some(100),
+            version: Some("v1.11"),
+            federation_version: Some("Synapse/1.99"),
+            delegated_server: Some("matrix.org:8448"),
+            room_versions: Some("1,2,6"),
         };
 
         assert_eq!(new_server.domain, "matrix.org");
@@ -101,12 +248,44 @@ mod tests {
             domain: "test.org",
             name: None,
             description: None,
+            logo_url: None,
+            theme: None,
             registration_open: None,
             public_rooms_count: None,
+            version: None,
+            federation_version: None,
+            delegated_server: None,
+            room_versions: None,
         };
 
         assert_eq!(new_server.domain, "test.org");
         assert!(new_server.name.is_none());
         assert!(new_server.description.is_none());
+    }
+
+    #[test]
+    fn test_server_filter_default() {
+        let filter = ServerFilter::default();
+        assert!(filter.search.is_none());
+        assert!(filter.registration_open.is_none());
+        assert!(filter.limit.is_none());
+    }
+
+    #[test]
+    fn test_server_filter_with_values() {
+        let filter = ServerFilter {
+            search: Some("matrix".to_string()),
+            registration_open: Some(true),
+            has_rooms: Some(true),
+            room_version: Some("6".to_string()),
+            sort_by: Some("name".to_string()),
+            sort_order: Some("asc".to_string()),
+            limit: Some(10),
+            offset: Some(0),
+        };
+
+        assert_eq!(filter.search, Some("matrix".to_string()));
+        assert_eq!(filter.registration_open, Some(true));
+        assert_eq!(filter.limit, Some(10));
     }
 }
