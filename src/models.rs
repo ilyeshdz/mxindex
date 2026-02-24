@@ -33,18 +33,38 @@ pub struct ServerResponse {
     pub domain: String,
     pub name: Option<String>,
     pub description: Option<String>,
+    pub logo_url: Option<String>,
+    pub theme: Option<String>,
     pub registration_open: Option<bool>,
     pub public_rooms_count: Option<i32>,
+    pub version: Option<String>,
+    pub federation_version: Option<String>,
+    pub delegated_server: Option<String>,
+    pub room_versions: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct PaginatedServersResponse {
+    pub servers: Vec<ServerResponse>,
+    pub total: i64,
+    pub limit: i32,
+    pub offset: i32,
 }
 
 #[derive(Debug)]
 pub struct DiscoveredServerInfo {
     pub name: Option<String>,
     pub description: Option<String>,
+    pub logo_url: Option<String>,
+    pub theme: Option<String>,
     pub registration_open: Option<bool>,
     pub public_rooms_count: Option<i32>,
+    pub version: Option<String>,
+    pub federation_version: Option<String>,
+    pub delegated_server: Option<String>,
+    pub room_versions: Option<String>,
 }
 
 #[cfg(test)]
@@ -115,8 +135,14 @@ mod tests {
             domain: "matrix.org".to_string(),
             name: Some("Matrix.org".to_string()),
             description: Some("The Matrix.org homeserver".to_string()),
+            logo_url: Some("https://matrix.org/images/logo.png".to_string()),
+            theme: Some("light".to_string()),
             registration_open: Some(true),
             public_rooms_count: Some(500),
+            version: Some("v1.11".to_string()),
+            federation_version: Some("Synapse/1.99".to_string()),
+            delegated_server: None,
+            room_versions: Some("1,2,6,9".to_string()),
             created_at: "2024-01-01 00:00:00".to_string(),
             updated_at: "2024-01-01 00:00:00".to_string(),
         };
