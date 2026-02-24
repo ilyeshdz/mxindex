@@ -1,5 +1,5 @@
 CREATE TABLE servers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     domain TEXT NOT NULL UNIQUE,
     name TEXT,
     description TEXT,
