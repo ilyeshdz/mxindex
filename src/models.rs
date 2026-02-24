@@ -30,7 +30,7 @@ pub struct CreateServerRequest {
 
 #[derive(Serialize, JsonSchema)]
 pub struct ServerResponse {
-    pub id: i32,
+    pub id: i64,
     pub domain: String,
     pub name: Option<String>,
     pub description: Option<String>,

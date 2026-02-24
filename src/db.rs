@@ -2,10 +2,11 @@ use crate::schema::servers;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 
-#[derive(Queryable, Debug, serde::Serialize)]
+#[derive(Queryable, Selectable, Debug, serde::Serialize)]
+#[diesel(table_name = servers)]
 #[serde(rename_all = "camelCase")]
 pub struct Server {
-    pub id: i32,
+    pub id: i64,
     pub domain: String,
     pub name: Option<String>,
     pub description: Option<String>,

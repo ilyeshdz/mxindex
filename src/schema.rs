@@ -2,14 +2,14 @@
 
 diesel::table! {
     servers (id) {
-        id -> Integer,
+        id -> Int8,
         domain -> Text,
         name -> Nullable<Text>,
         description -> Nullable<Text>,
         logo_url -> Nullable<Text>,
         theme -> Nullable<Text>,
         registration_open -> Nullable<Bool>,
-        public_rooms_count -> Nullable<Integer>,
+        public_rooms_count -> Nullable<Int4>,
         version -> Nullable<Text>,
         federation_version -> Nullable<Text>,
         delegated_server -> Nullable<Text>,
