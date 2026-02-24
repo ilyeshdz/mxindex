@@ -1,3 +1,4 @@
 target
 mxindex.db
 *.db
+.env
