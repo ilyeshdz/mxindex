@@ -69,11 +69,13 @@ jobs:
 
       - name: Set environment variables
         run: |
-          echo "DATABASE_URL=postgres://mxindex:mxindex_dev@localhost:5432/mxindex" >> $GITHUB_ENV
+          echo "DATABASE_URL=postgres://postgres:postgres@localhost:5432/mxindex" >> $GITHUB_ENV
           echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
 
-      - name: Run diesel migrations
-        run: cargo diesel setup
+      - name: Create database
+        run: |
+          psql -h localhost -U postgres -c "CREATE USER mxindex WITH PASSWORD 'mxindex_dev' SUPERUSER;" || true
+          psql -h localhost -U postgres -c "CREATE DATABASE mxindex OWNER mxindex;" || true
 
       - name: Build
         run: cargo build --verbose
