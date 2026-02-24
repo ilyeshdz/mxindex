@@ -1,8 +1,14 @@
 use rocket::serde::json::Json;
+use rocket::State;
 use rocket_okapi::openapi;
 use crate::models::{ApiInfo, ServerInfo, ErrorResponse, CreateServerRequest, ServerResponse, PaginatedServersResponse};
 use crate::services::MatrixService;
 use crate::db::{establish_connection, insert_server, get_server_by_domain, get_filtered_servers, ServerFilter};
+use crate::app::AppState;
+
+const CACHE_TTL_SHORT: usize = 60;
+const CACHE_TTL_MEDIUM: usize = 300;
+const CACHE_TTL_LONG: usize = 3600;
 
 #[openapi]
 #[get("/")]
@@ -16,7 +22,7 @@ pub fn index() -> Json<ApiInfo> {
 
 #[openapi]
 #[get("/servers/<server>")]
-pub async fn server_info(server: &str) -> Result<Json<ServerInfo>, Json<ErrorResponse>> {
+pub async fn server_info(server: &str, state: &State<AppState>) -> Result<Json<ServerInfo>, Json<ErrorResponse>> {
     if server.is_empty() || server.contains('/') || server.contains(':') {
         return Err(Json(ErrorResponse {
             error: "invalid_server".to_string(),
@@ -24,15 +30,21 @@ pub async fn server_info(server: &str) -> Result<Json<ServerInfo>, Json<ErrorRes
         }));
     }
 
+    let cache_key = format!("server:info:{}", server);
+    
+    if let Ok(cached) = state.cache.get::<ServerInfo>(&cache_key).await {
+        return Ok(Json(cached));
+    }
+
     let version = MatrixService::get_server_version(server).await.ok();
 
-    match MatrixService::check_server_status(server).await {
-        Ok(_) => Ok(Json(ServerInfo {
+    let result = match MatrixService::check_server_status(server).await {
+        Ok(_) => ServerInfo {
             server: server.to_string(),
             status: "online".to_string(),
             version,
             error: None,
-        })),
+        },
         Err(e) => {
             let error_type = if e.to_string().contains("dns") {
                 "dns_error"
@@ -42,19 +54,23 @@ pub async fn server_info(server: &str) -> Result<Json<ServerInfo>, Json<ErrorRes
                 "server_error"
             };
 
-            Ok(Json(ServerInfo {
+            ServerInfo {
                 server: server.to_string(),
                 status: "offline".to_string(),
                 version,
                 error: Some(error_type.to_string()),
-            }))
+            }
         }
-    }
+    };
+
+    let _ = state.cache.set(&cache_key, &result, CACHE_TTL_SHORT).await;
+
+    Ok(Json(result))
 }
 
 #[openapi]
 #[post("/servers", data = "<request>")]
-pub async fn add_server(request: Json<CreateServerRequest>) -> Result<Json<ServerResponse>, Json<ErrorResponse>> {
+pub async fn add_server(request: Json<CreateServerRequest>, state: &State<AppState>) -> Result<Json<ServerResponse>, Json<ErrorResponse>> {
     if request.domain.is_empty() || request.domain.contains('/') || request.domain.contains(':') {
         return Err(Json(ErrorResponse {
             error: "invalid_domain".to_string(),
@@ -87,22 +103,27 @@ pub async fn add_server(request: Json<CreateServerRequest>) -> Result<Json<Serve
             };
 
             match insert_server(&mut conn, &new_server) {
-                Ok(server) => Ok(Json(ServerResponse {
-                    id: server.id,
-                    domain: server.domain,
-                    name: server.name,
-                    description: server.description,
-                    logo_url: server.logo_url,
-                    theme: server.theme,
-                    registration_open: server.registration_open,
-                    public_rooms_count: server.public_rooms_count,
-                    version: server.version,
-                    federation_version: server.federation_version,
-                    delegated_server: server.delegated_server,
-                    room_versions: server.room_versions,
-                    created_at: server.created_at,
-                    updated_at: server.updated_at,
-                })),
+                Ok(server) => {
+                    let _ = state.cache.invalidate_pattern("servers:*").await;
+                    let _ = state.cache.delete(&format!("server:info:{}", request.domain)).await;
+
+                    Ok(Json(ServerResponse {
+                        id: server.id,
+                        domain: server.domain,
+                        name: server.name,
+                        description: server.description,
+                        logo_url: server.logo_url,
+                        theme: server.theme,
+                        registration_open: server.registration_open,
+                        public_rooms_count: server.public_rooms_count,
+                        version: server.version,
+                        federation_version: server.federation_version,
+                        delegated_server: server.delegated_server,
+                        room_versions: server.room_versions,
+                        created_at: server.created_at,
+                        updated_at: server.updated_at,
+                    }))
+                },
                 Err(e) => Err(Json(ErrorResponse {
                     error: "database_error".to_string(),
                     message: format!("Failed to save server: {}", e),
@@ -118,9 +139,14 @@ pub async fn add_server(request: Json<CreateServerRequest>) -> Result<Json<Serve
 
 #[openapi]
 #[get("/servers")]
-pub fn list_servers() -> Result<Json<PaginatedServersResponse>, Json<ErrorResponse>> {
-    let mut conn = establish_connection();
+pub async fn list_servers(state: &State<AppState>) -> Result<Json<PaginatedServersResponse>, Json<ErrorResponse>> {
+    let cache_key = "servers:list";
     
+    if let Ok(cached) = state.cache.get::<PaginatedServersResponse>(cache_key).await {
+        return Ok(Json(cached));
+    }
+
+    let mut conn = establish_connection();
     let filter = ServerFilter::default();
     
     match get_filtered_servers(&mut conn, &filter) {
@@ -142,12 +168,16 @@ pub fn list_servers() -> Result<Json<PaginatedServersResponse>, Json<ErrorRespon
                 updated_at: s.updated_at,
             }).collect();
             
-            Ok(Json(PaginatedServersResponse {
+            let response = PaginatedServersResponse {
                 servers: responses,
                 total: result.total,
                 limit: result.limit,
                 offset: result.offset,
-            }))
+            };
+
+            let _ = state.cache.set(cache_key, &response, CACHE_TTL_MEDIUM).await;
+
+            Ok(Json(response))
         },
         Err(e) => Err(Json(ErrorResponse {
             error: "database_error".to_string(),
@@ -158,7 +188,8 @@ pub fn list_servers() -> Result<Json<PaginatedServersResponse>, Json<ErrorRespon
 
 #[openapi]
 #[get("/servers/search?<search>&<registration_open>&<has_rooms>&<room_version>&<sort_by>&<sort_order>&<limit>&<offset>")]
-pub fn search_servers(
+pub async fn search_servers(
+    state: &State<AppState>,
     search: Option<String>,
     registration_open: Option<bool>,
     has_rooms: Option<bool>,
@@ -168,6 +199,22 @@ pub fn search_servers(
     limit: Option<i32>,
     offset: Option<i32>,
 ) -> Result<Json<PaginatedServersResponse>, Json<ErrorResponse>> {
+    let cache_key = format!(
+        "servers:search:{}:{}:{}:{}:{}:{}:{}:{}",
+        search.as_deref().unwrap_or(""),
+        registration_open.map(|b| b.to_string()).unwrap_or_default(),
+        has_rooms.map(|b| b.to_string()).unwrap_or_default(),
+        room_version.as_deref().unwrap_or(""),
+        sort_by.as_deref().unwrap_or(""),
+        sort_order.as_deref().unwrap_or(""),
+        limit.unwrap_or(0),
+        offset.unwrap_or(0)
+    );
+    
+    if let Ok(cached) = state.cache.get::<PaginatedServersResponse>(&cache_key).await {
+        return Ok(Json(cached));
+    }
+
     let mut conn = establish_connection();
     
     let filter = ServerFilter {
@@ -200,12 +247,16 @@ pub fn search_servers(
                 updated_at: s.updated_at,
             }).collect();
             
-            Ok(Json(PaginatedServersResponse {
+            let response = PaginatedServersResponse {
                 servers: responses,
                 total: result.total,
                 limit: result.limit,
                 offset: result.offset,
-            }))
+            };
+
+            let _ = state.cache.set(&cache_key, &response, CACHE_TTL_SHORT).await;
+
+            Ok(Json(response))
         },
         Err(e) => Err(Json(ErrorResponse {
             error: "database_error".to_string(),

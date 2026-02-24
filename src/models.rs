@@ -1,15 +1,15 @@
 use chrono::NaiveDateTime;
-use rocket::serde::Serialize;
+use rocket::serde::{Deserialize, Serialize};
 use rocket_okapi::JsonSchema;
 
-#[derive(Serialize, JsonSchema)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ApiInfo {
     pub name: String,
     pub version: String,
     pub description: String,
 }
 
-#[derive(Serialize, JsonSchema)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ServerInfo {
     pub server: String,
     pub status: String,
@@ -17,7 +17,7 @@ pub struct ServerInfo {
     pub error: Option<String>,
 }
 
-#[derive(Serialize, JsonSchema)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ErrorResponse {
     pub error: String,
     pub message: String,
@@ -28,7 +28,7 @@ pub struct CreateServerRequest {
     pub domain: String,
 }
 
-#[derive(Serialize, JsonSchema)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ServerResponse {
     pub id: i64,
     pub domain: String,
@@ -46,7 +46,7 @@ pub struct ServerResponse {
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(Serialize, JsonSchema)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct PaginatedServersResponse {
     pub servers: Vec<ServerResponse>,
     pub total: i64,

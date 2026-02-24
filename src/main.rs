@@ -2,6 +2,7 @@ use rocket::fairing::AdHoc;
 
 #[macro_use] extern crate rocket;
 
+mod app;
 mod cache;
 mod db;
 mod models;
@@ -15,9 +16,7 @@ use rocket_okapi::swagger_ui::{make_swagger_ui, SwaggerUIConfig};
 use rocket_okapi::openapi_get_routes;
 use std::sync::Arc;
 
-pub struct AppState {
-    pub cache: Arc<Cache>,
-}
+use app::AppState;
 
 #[launch]
 fn rocket() -> _ {
@@ -31,7 +30,7 @@ fn rocket() -> _ {
     
     rocket::build()
         .manage(AppState { cache: cache.clone() })
-        .attach(AdHoc::on_liftoff("Redis Connection", move |rocket| {
+        .attach(AdHoc::on_liftoff("Redis Connection", move |_rocket| {
             let cache = cache.clone();
             Box::pin(async move {
                 match cache.connect(&redis_url).await {
