@@ -1,6 +1,6 @@
 use crate::schema::servers;
+use diesel::pg::PgConnection;
 use diesel::prelude::*;
-use diesel::SqliteConnection;
 
 #[derive(Queryable, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,8 +17,8 @@ pub struct Server {
     pub federation_version: Option<String>,
     pub delegated_server: Option<String>,
     pub room_versions: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
 }
 
 #[derive(Insertable, Debug)]
@@ -57,7 +57,7 @@ pub struct PaginatedServers {
     pub offset: i32,
 }
 
-pub fn establish_connection() -> SqliteConnection {
+pub fn establish_connection() -> PgConnection {
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
@@ -65,12 +65,12 @@ pub fn establish_connection() -> SqliteConnection {
         std::fs::create_dir_all(parent).ok();
     }
 
-    SqliteConnection::establish(&database_url)
+    PgConnection::establish(&database_url)
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
 pub fn insert_server(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     new_server: &NewServer,
 ) -> Result<Server, diesel::result::Error> {
     use crate::schema::servers::dsl::*;
@@ -83,7 +83,7 @@ pub fn insert_server(
 }
 
 pub fn get_server_by_domain(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     server_domain: &str,
 ) -> Result<Option<Server>, diesel::result::Error> {
     use crate::schema::servers::dsl::*;
@@ -94,14 +94,14 @@ pub fn get_server_by_domain(
         .optional()
 }
 
-pub fn get_all_servers(conn: &mut SqliteConnection) -> Result<Vec<Server>, diesel::result::Error> {
+pub fn get_all_servers(conn: &mut PgConnection) -> Result<Vec<Server>, diesel::result::Error> {
     use crate::schema::servers::dsl::*;
 
     servers.load(conn)
 }
 
 pub fn get_filtered_servers(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     filter: &ServerFilter,
 ) -> Result<PaginatedServers, diesel::result::Error> {
     use crate::schema::servers::dsl::*;
@@ -209,7 +209,7 @@ pub fn get_filtered_servers(
     })
 }
 
-pub fn run_migrations(conn: &mut SqliteConnection) {
+pub fn run_migrations(conn: &mut PgConnection) {
     use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
     const MIGRATIONS: EmbeddedMigrations = embed_migrations!();

@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use rocket::serde::Serialize;
 use rocket_okapi::JsonSchema;
 
@@ -41,8 +42,8 @@ pub struct ServerResponse {
     pub federation_version: Option<String>,
     pub delegated_server: Option<String>,
     pub room_versions: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -143,8 +144,10 @@ mod tests {
             federation_version: Some("Synapse/1.99".to_string()),
             delegated_server: None,
             room_versions: Some("1,2,6,9".to_string()),
-            created_at: "2024-01-01 00:00:00".to_string(),
-            updated_at: "2024-01-01 00:00:00".to_string(),
+            created_at: NaiveDateTime::parse_from_str("2024-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap(),
+            updated_at: NaiveDateTime::parse_from_str("2024-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap(),
         };
 
         assert_eq!(response.id, 1);
