@@ -1,7 +1,8 @@
 use crate::app::AppState;
 use crate::db::{
-    ServerFilter, get_filtered_servers, get_server_by_domain, insert_server,
+    ServerFilter, get_filtered_servers, get_server_by_domain, insert_server, DbPool,
 };
+use crate::federation_discovery::FederationDiscovery;
 use crate::models::{
     ApiInfo, CreateServerRequest, ErrorResponse, PaginatedServersResponse, ServerInfo,
     ServerResponse,
@@ -408,5 +409,30 @@ mod tests {
     fn test_list_servers_cache_key() {
         let cache_key = "servers:list";
         assert_eq!(cache_key, "servers:list");
+    }
+}
+
+#[derive(serde::Serialize, rocket_okapi::JsonSchema)]
+pub struct DiscoveryResponse {
+    pub discovered: usize,
+    pub message: String,
+}
+
+#[openapi]
+#[post("/discover/federation")]
+pub async fn discover_federation(
+    state: &rocket::State<AppState>,
+) -> Result<Json<DiscoveryResponse>, Json<ErrorResponse>> {
+    let discovery = FederationDiscovery::new(state.db_pool.clone());
+    
+    match discovery.start_discovery().await {
+        Ok(count) => Ok(Json(DiscoveryResponse {
+            discovered: count,
+            message: format!("Successfully discovered {} new servers", count),
+        })),
+        Err(e) => Err(Json(ErrorResponse {
+            error: "discovery_failed".to_string(),
+            message: format!("Federation discovery failed: {}", e),
+        })),
     }
 }

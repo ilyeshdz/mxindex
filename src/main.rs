@@ -9,6 +9,7 @@ extern crate rocket;
 mod app;
 mod cache;
 mod db;
+mod federation_discovery;
 mod http_client;
 mod metrics;
 mod models;
@@ -19,6 +20,7 @@ mod services;
 
 use cache::Cache;
 use db::{create_pool, establish_connection, run_migrations};
+use federation_discovery::FederationDiscovery;
 use metrics::Metrics;
 use rate_limit::{rate_limiter_from_config, RateLimiterState};
 use rocket_okapi::openapi_get_routes;
@@ -87,6 +89,7 @@ fn rocket() -> Rocket<Build> {
                 routes::list_servers,
                 routes::search_servers,
                 routes::health,
+                routes::discover_federation,
                 metrics_endpoint
             ],
         )
