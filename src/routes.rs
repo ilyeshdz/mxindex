@@ -194,26 +194,26 @@ pub async fn list_servers(
 
     match get_filtered_servers(&mut conn, &filter) {
         Ok(result) => {
-            let responses = result
-                .servers
-                .into_iter()
-                .map(|s| ServerResponse {
-                    id: s.id,
-                    domain: s.domain,
-                    name: s.name,
-                    description: s.description,
-                    logo_url: s.logo_url,
-                    theme: s.theme,
-                    registration_open: s.registration_open,
-                    public_rooms_count: s.public_rooms_count,
-                    version: s.version,
-                    federation_version: s.federation_version,
-                    delegated_server: s.delegated_server,
-                    room_versions: s.room_versions,
-                    created_at: s.created_at,
-                    updated_at: s.updated_at,
-                })
-                .collect();
+                    let responses = result
+                        .servers
+                        .into_iter()
+                        .map(|s| ServerResponse {
+                            id: s.id,
+                            domain: s.domain,
+                            name: s.name,
+                            description: s.description,
+                            logo_url: s.logo_url,
+                            theme: s.theme,
+                            registration_open: s.registration_open,
+                            public_rooms_count: s.public_rooms_count,
+                            version: s.version,
+                            federation_version: s.federation_version,
+                            delegated_server: s.delegated_server,
+                            room_versions: s.room_versions,
+                            created_at: s.created_at,
+                            updated_at: s.updated_at,
+                        })
+                        .collect();
 
             let response = PaginatedServersResponse {
                 servers: responses,
@@ -290,26 +290,26 @@ pub async fn search_servers(
 
     match get_filtered_servers(&mut conn, &filter) {
         Ok(result) => {
-            let responses = result
-                .servers
-                .into_iter()
-                .map(|s| ServerResponse {
-                    id: s.id,
-                    domain: s.domain,
-                    name: s.name,
-                    description: s.description,
-                    logo_url: s.logo_url,
-                    theme: s.theme,
-                    registration_open: s.registration_open,
-                    public_rooms_count: s.public_rooms_count,
-                    version: s.version,
-                    federation_version: s.federation_version,
-                    delegated_server: s.delegated_server,
-                    room_versions: s.room_versions,
-                    created_at: s.created_at,
-                    updated_at: s.updated_at,
-                })
-                .collect();
+                    let responses = result
+                        .servers
+                        .into_iter()
+                        .map(|s| ServerResponse {
+                            id: s.id,
+                            domain: s.domain,
+                            name: s.name,
+                            description: s.description,
+                            logo_url: s.logo_url,
+                            theme: s.theme,
+                            registration_open: s.registration_open,
+                            public_rooms_count: s.public_rooms_count,
+                            version: s.version,
+                            federation_version: s.federation_version,
+                            delegated_server: s.delegated_server,
+                            room_versions: s.room_versions,
+                            created_at: s.created_at,
+                            updated_at: s.updated_at,
+                        })
+                        .collect();
 
             let response = PaginatedServersResponse {
                 servers: responses,

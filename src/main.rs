@@ -1,4 +1,7 @@
 use rocket::fairing::AdHoc;
+use rocket::Rocket;
+use rocket::Build;
+use rocket_okapi::openapi;
 
 #[macro_use]
 extern crate rocket;
@@ -7,22 +10,36 @@ mod app;
 mod cache;
 mod db;
 mod http_client;
+mod metrics;
 mod models;
+mod rate_limit;
 mod routes;
 mod schema;
 mod services;
 
 use cache::Cache;
 use db::{create_pool, establish_connection, run_migrations};
+use metrics::Metrics;
+use rate_limit::{rate_limiter_from_config, RateLimiterState};
 use rocket_okapi::openapi_get_routes;
 use rocket_okapi::swagger_ui::{make_swagger_ui, SwaggerUIConfig};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use app::AppState;
 
+#[openapi]
+#[get("/metrics")]
+fn metrics_endpoint(
+    metrics: &rocket::State<Arc<RwLock<Metrics>>>,
+) -> String {
+    let metrics = metrics.blocking_read();
+    metrics.encode()
+}
+
 #[launch]
-fn rocket() -> _ {
+fn rocket() -> Rocket<Build> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -39,12 +56,16 @@ fn rocket() -> _ {
     let cache = Arc::new(Cache::new());
     let redis_url =
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    let metrics = Metrics::new();
+    let rate_limiter = rate_limiter_from_config();
 
     rocket::build()
         .manage(AppState {
             cache: cache.clone(),
             db_pool,
         })
+        .manage(metrics)
+        .manage(rate_limiter)
         .attach(AdHoc::on_liftoff("Redis Connection", move |_rocket| {
             let cache = cache.clone();
             Box::pin(async move {
@@ -65,7 +86,8 @@ fn rocket() -> _ {
                 routes::add_server,
                 routes::list_servers,
                 routes::search_servers,
-                routes::health
+                routes::health,
+                metrics_endpoint
             ],
         )
         .mount(
