@@ -1,6 +1,9 @@
 use crate::schema::servers;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
 #[derive(Queryable, Selectable, Debug, serde::Serialize)]
 #[diesel(table_name = servers)]
@@ -70,6 +73,17 @@ pub fn establish_connection() -> PgConnection {
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
+pub fn create_pool() -> DbPool {
+    dotenvy::dotenv().ok();
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+    let manager = ConnectionManager::<PgConnection>::new(database_url);
+    Pool::builder()
+        .max_size(10)
+        .build(manager)
+        .expect("Failed to create DB pool")
+}
+
 pub fn insert_server(
     conn: &mut PgConnection,
     new_server: &NewServer,
@@ -114,94 +128,103 @@ pub fn get_filtered_servers(
     let sort_by = filter.sort_by.as_deref().unwrap_or("created_at");
     let sort_order = filter.sort_order.as_deref().unwrap_or("desc");
 
-    let mut all_servers: Vec<Server> = servers.load(conn)?;
+    let search_pattern = filter
+        .search
+        .as_ref()
+        .map(|s| format!("%{}%", s.to_lowercase()));
+    let room_version_pattern = filter.room_version.as_ref().map(|rv| format!("%{}%", rv));
 
-    if let Some(ref search) = filter.search {
-        let search_lower = search.to_lowercase();
-        all_servers.retain(|s| {
-            s.domain.to_lowercase().contains(&search_lower)
-                || s.name
-                    .as_ref()
-                    .map(|n| n.to_lowercase().contains(&search_lower))
-                    .unwrap_or(false)
-                || s.description
-                    .as_ref()
-                    .map(|d| d.to_lowercase().contains(&search_lower))
-                    .unwrap_or(false)
-        });
+    let mut count_query = servers.into_boxed();
+
+    if let Some(ref pattern) = search_pattern {
+        count_query = count_query.filter(
+            domain
+                .ilike(pattern)
+                .or(name.ilike(pattern))
+                .or(description.ilike(pattern)),
+        );
     }
 
     if let Some(reg_open) = filter.registration_open {
-        all_servers.retain(|s| s.registration_open == Some(reg_open));
+        count_query = count_query.filter(registration_open.eq(reg_open));
     }
 
     if let Some(has_rooms) = filter.has_rooms {
         if has_rooms {
-            all_servers.retain(|s| s.public_rooms_count.unwrap_or(0) > 0);
+            count_query = count_query.filter(public_rooms_count.gt(0));
         } else {
-            all_servers.retain(|s| s.public_rooms_count.unwrap_or(0) <= 0);
+            count_query =
+                count_query.filter(public_rooms_count.le(0).or(public_rooms_count.is_null()));
         }
     }
 
-    if let Some(ref room_version) = filter.room_version {
-        all_servers.retain(|s| {
-            s.room_versions
-                .as_ref()
-                .map(|rv| rv.contains(room_version))
-                .unwrap_or(false)
-        });
+    if let Some(ref pattern) = room_version_pattern {
+        count_query = count_query.filter(room_versions.like(pattern));
     }
 
-    let total = all_servers.len() as i64;
+    let total = count_query.count().get_result::<i64>(conn)?;
 
-    match sort_by {
+    let mut result_query = servers.into_boxed();
+
+    if let Some(ref pattern) = search_pattern {
+        result_query = result_query.filter(
+            domain
+                .ilike(pattern)
+                .or(name.ilike(pattern))
+                .or(description.ilike(pattern)),
+        );
+    }
+
+    if let Some(reg_open) = filter.registration_open {
+        result_query = result_query.filter(registration_open.eq(reg_open));
+    }
+
+    if let Some(has_rooms) = filter.has_rooms {
+        if has_rooms {
+            result_query = result_query.filter(public_rooms_count.gt(0));
+        } else {
+            result_query =
+                result_query.filter(public_rooms_count.le(0).or(public_rooms_count.is_null()));
+        }
+    }
+
+    if let Some(ref pattern) = room_version_pattern {
+        result_query = result_query.filter(room_versions.like(pattern));
+    }
+
+    let result_servers: Vec<Server> = match sort_by {
         "name" => {
-            all_servers.sort_by(|a, b| {
-                let a_name = a.name.as_deref().unwrap_or("");
-                let b_name = b.name.as_deref().unwrap_or("");
-                if sort_order == "asc" {
-                    a_name.cmp(b_name)
-                } else {
-                    b_name.cmp(a_name)
-                }
-            });
+            if sort_order == "asc" {
+                result_query.order(name.asc())
+            } else {
+                result_query.order(name.desc())
+            }
         }
         "domain" => {
-            all_servers.sort_by(|a, b| {
-                if sort_order == "asc" {
-                    a.domain.cmp(&b.domain)
-                } else {
-                    b.domain.cmp(&a.domain)
-                }
-            });
+            if sort_order == "asc" {
+                result_query.order(domain.asc())
+            } else {
+                result_query.order(domain.desc())
+            }
         }
         "public_rooms_count" => {
-            all_servers.sort_by(|a, b| {
-                let a_rooms = a.public_rooms_count.unwrap_or(0);
-                let b_rooms = b.public_rooms_count.unwrap_or(0);
-                if sort_order == "asc" {
-                    a_rooms.cmp(&b_rooms)
-                } else {
-                    b_rooms.cmp(&a_rooms)
-                }
-            });
+            if sort_order == "asc" {
+                result_query.order(public_rooms_count.asc())
+            } else {
+                result_query.order(public_rooms_count.desc())
+            }
         }
         _ => {
-            all_servers.sort_by(|a, b| {
-                if sort_order == "asc" {
-                    a.created_at.cmp(&b.created_at)
-                } else {
-                    b.created_at.cmp(&a.created_at)
-                }
-            });
+            if sort_order == "asc" {
+                result_query.order(created_at.asc())
+            } else {
+                result_query.order(created_at.desc())
+            }
         }
     }
-
-    let result_servers: Vec<Server> = all_servers
-        .into_iter()
-        .skip(offset as usize)
-        .take(limit as usize)
-        .collect();
+    .offset(offset as i64)
+    .limit(limit as i64)
+    .load(conn)?;
 
     Ok(PaginatedServers {
         servers: result_servers,
@@ -212,7 +235,7 @@ pub fn get_filtered_servers(
 }
 
 pub fn run_migrations(conn: &mut PgConnection) {
-    use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+    use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
     const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
