@@ -1,3 +1,4 @@
+use crate::http_client::get_http_client;
 use crate::models::DiscoveredServerInfo;
 use matrix_sdk::Client;
 use matrix_sdk::ruma::UInt;
@@ -119,9 +120,7 @@ impl MatrixService {
     > {
         let well_known_url = format!("https://{}/.well-known/matrix/client", domain);
 
-        let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()?;
+        let http_client = get_http_client();
 
         let response = http_client.get(&well_known_url).send().await?;
 
@@ -144,9 +143,7 @@ impl MatrixService {
     ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
         let well_known_url = format!("https://{}/.well-known/matrix/server", domain);
 
-        let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()?;
+        let http_client = get_http_client();
 
         let response = http_client.get(&well_known_url).send().await?;
 
@@ -183,9 +180,7 @@ impl MatrixService {
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let federation_url = format!("https://{}/_matrix/federation/v1/version", server);
 
-        let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()?;
+        let http_client = get_http_client();
 
         let response = http_client.get(&federation_url).send().await?;
 
