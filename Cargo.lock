@@ -2625,6 +2625,7 @@ dependencies = [
  "httptest",
  "matrix-sdk",
  "mockall",
+ "once_cell",
  "redis",
  "reqwest 0.11.27",
  "rocket",
@@ -2634,6 +2635,8 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
