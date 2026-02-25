@@ -1,6 +1,6 @@
 use crate::app::AppState;
 use crate::db::{
-    ServerFilter, establish_connection, get_filtered_servers, get_server_by_domain, insert_server,
+    ServerFilter, get_filtered_servers, get_server_by_domain, insert_server,
 };
 use crate::models::{
     ApiInfo, CreateServerRequest, ErrorResponse, PaginatedServersResponse, ServerInfo,
@@ -10,11 +10,16 @@ use crate::services::MatrixService;
 use rocket::State;
 use rocket::serde::json::Json;
 use rocket_okapi::openapi;
+use diesel::r2d2::{ConnectionManager, PooledConnection};
+use diesel::PgConnection;
 
 const CACHE_TTL_SHORT: usize = 60;
 const CACHE_TTL_MEDIUM: usize = 300;
 #[allow(dead_code)]
 const CACHE_TTL_LONG: usize = 3600;
+
+#[allow(dead_code)]
+type DbConn = PooledConnection<ConnectionManager<PgConnection>>;
 
 #[openapi]
 #[get("/")]
@@ -24,6 +29,19 @@ pub fn index() -> Json<ApiInfo> {
         version: env!("CARGO_PKG_VERSION").to_string(),
         description: "Matrix homeserver index API".to_string(),
     })
+}
+
+#[openapi]
+#[get("/health")]
+pub async fn health(state: &State<AppState>) -> Json<serde_json::Value> {
+    let db_healthy = state.db_pool.get().is_ok();
+    
+    let health_status = serde_json::json!({
+        "status": if db_healthy { "healthy" } else { "unhealthy" },
+        "database": if db_healthy { "ok" } else { "error" },
+    });
+    
+    Json(health_status)
 }
 
 #[openapi]
@@ -90,7 +108,11 @@ pub async fn add_server(
         }));
     }
 
-    let mut conn = establish_connection();
+    let mut conn = state.db_pool.get().map_err(|e| Json(ErrorResponse {
+        error: "pool_error".to_string(),
+        message: format!("Failed to get DB connection: {}", e),
+    }))?;
+    
     if let Ok(Some(_)) = get_server_by_domain(&mut conn, &request.domain) {
         return Err(Json(ErrorResponse {
             error: "server_exists".to_string(),
@@ -163,7 +185,11 @@ pub async fn list_servers(
         return Ok(Json(cached));
     }
 
-    let mut conn = establish_connection();
+    let mut conn = state.db_pool.get().map_err(|e| Json(ErrorResponse {
+        error: "pool_error".to_string(),
+        message: format!("Failed to get DB connection: {}", e),
+    }))?;
+    
     let filter = ServerFilter::default();
 
     match get_filtered_servers(&mut conn, &filter) {
@@ -246,7 +272,10 @@ pub async fn search_servers(
         return Ok(Json(cached));
     }
 
-    let mut conn = establish_connection();
+    let mut conn = state.db_pool.get().map_err(|e| Json(ErrorResponse {
+        error: "pool_error".to_string(),
+        message: format!("Failed to get DB connection: {}", e),
+    }))?;
 
     let filter = ServerFilter {
         search,
