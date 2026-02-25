@@ -77,8 +77,18 @@ impl FederationDiscovery {
                     let semaphore = semaphore.clone();
                     async move {
                         let _permit = semaphore.acquire().await.expect("Failed to acquire permit");
-                        let result = Self::discover_servers_from_federation(&server).await;
-                        (server, result)
+                        let result = tokio::time::timeout(
+                            std::time::Duration::from_secs(10),
+                            Self::discover_servers_from_federation(&server)
+                        ).await;
+                        match result {
+                            Ok(Ok(servers)) => (server, Ok(servers)),
+                            Ok(Err(e)) => (server, Err(e)),
+                            Err(_) => {
+                                let err: Box<dyn std::error::Error + Send + Sync> = "Timeout".into();
+                                (server, Err(err))
+                            }
+                        }
                     }
                 })
                 .buffer_unordered(self.max_concurrent)

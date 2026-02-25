@@ -2,6 +2,7 @@ use rocket::fairing::AdHoc;
 use rocket::Rocket;
 use rocket::Build;
 use rocket_okapi::openapi;
+use std::sync::{Arc, RwLock};
 
 #[macro_use]
 extern crate rocket;
@@ -25,8 +26,6 @@ use metrics::Metrics;
 use rate_limit::{rate_limiter_from_config, RateLimiterState};
 use rocket_okapi::openapi_get_routes;
 use rocket_okapi::swagger_ui::{make_swagger_ui, SwaggerUIConfig};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use app::AppState;
@@ -36,7 +35,7 @@ use app::AppState;
 fn metrics_endpoint(
     metrics: &rocket::State<Arc<RwLock<Metrics>>>,
 ) -> String {
-    let metrics = metrics.blocking_read();
+    let metrics = metrics.read().unwrap();
     metrics.encode()
 }
 

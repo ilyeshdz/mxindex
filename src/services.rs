@@ -1,9 +1,5 @@
 use crate::http_client::get_http_client;
 use crate::models::DiscoveredServerInfo;
-use matrix_sdk::Client;
-use matrix_sdk::ruma::UInt;
-use matrix_sdk::ruma::api::client::directory::get_public_rooms_filtered;
-use matrix_sdk::ruma::api::client::discovery::get_supported_versions;
 use serde::Deserialize;
 
 pub struct MatrixService;
@@ -27,49 +23,77 @@ struct FederationVersionInfo {
     server: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct CapabilitiesResponse {
+    #[serde(rename = "capabilities")]
+    capabilities: Option<Capabilities>,
+}
+
+#[derive(Deserialize)]
+struct Capabilities {
+    #[serde(rename = "m.change_password")]
+    change_password: Option<ChangePassword>,
+    #[serde(rename = "m.room_versions")]
+    room_versions: Option<RoomVersions>,
+}
+
+#[derive(Deserialize)]
+struct ChangePassword {
+    enabled: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct RoomVersions {
+    available: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct PublicRoomsResponse {
+    #[serde(rename = "total_room_count_estimate")]
+    total_room_count_estimate: Option<i64>,
+}
+
 impl MatrixService {
     pub async fn check_server_status(
         server: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let server_url = format!("https://{}", server);
+        let http_client = get_http_client();
 
-        let client = Client::builder()
-            .homeserver_url(&server_url)
-            .build()
+        let response = http_client
+            .get(&format!("{}/_matrix/client/versions", server_url))
+            .send()
             .await?;
 
-        client.get_capabilities().await?;
-
-        Ok(())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("Server {} returned status {}", server, response.status()).into())
+        }
     }
 
     pub async fn discover_server_info(
         domain: &str,
     ) -> Result<DiscoveredServerInfo, Box<dyn std::error::Error + Send + Sync>> {
         let server_url = format!("https://{}", domain);
+        let http_client = get_http_client();
 
-        let client = Client::builder()
-            .homeserver_url(&server_url)
-            .build()
-            .await?;
+        let capabilities = Self::get_capabilities(&server_url, &http_client).await;
+        
+        let registration_open = capabilities
+            .as_ref()
+            .and_then(|c| c.capabilities.as_ref())
+            .and_then(|c| c.change_password.as_ref())
+            .and_then(|c| c.enabled);
 
-        let capabilities = client.get_capabilities().await?;
+        let room_versions = capabilities
+            .as_ref()
+            .and_then(|c| c.capabilities.as_ref())
+            .and_then(|c| c.room_versions.as_ref())
+            .and_then(|r| r.available.as_ref())
+            .map(|v| v.join(","));
 
-        let registration_open = Some(capabilities.change_password.enabled);
-
-        let room_versions: Vec<String> = capabilities
-            .room_versions
-            .available
-            .keys()
-            .map(|v| v.to_string())
-            .collect();
-        let room_versions_str = if room_versions.is_empty() {
-            None
-        } else {
-            Some(room_versions.join(","))
-        };
-
-        let public_rooms_count = Self::get_public_rooms_count(&client).await.ok();
+        let public_rooms_count = Self::get_public_rooms_count(&server_url, &http_client).await.ok();
 
         let (name, description, logo_url, theme) =
             Self::fetch_well_known_client_info(domain).await?;
@@ -88,23 +112,39 @@ impl MatrixService {
             version,
             federation_version,
             delegated_server,
-            room_versions: room_versions_str,
+            room_versions,
         })
     }
 
+    async fn get_capabilities(
+        server_url: &str,
+        http_client: &reqwest::Client,
+    ) -> Option<CapabilitiesResponse> {
+        let url = format!("{}/_matrix/client/r0/capabilities", server_url);
+        match http_client.get(&url).send().await {
+            Ok(response) if response.status().is_success() => response.json().await.ok(),
+            _ => None,
+        }
+    }
+
     async fn get_public_rooms_count(
-        client: &Client,
+        server_url: &str,
+        http_client: &reqwest::Client,
     ) -> Result<i32, Box<dyn std::error::Error + Send + Sync>> {
-        let request = get_public_rooms_filtered::v3::Request::new();
+        let url = format!("{}/_matrix/client/r0/publicRooms?limit=1", server_url);
+        
+        let response = http_client
+            .get(&url)
+            .send()
+            .await?;
 
-        let response = client.send(request).await?;
+        if !response.status().is_success() {
+            return Err("Failed to get public rooms".into());
+        }
 
-        let total: UInt = response
-            .total_room_count_estimate
-            .unwrap_or(UInt::from(0u32));
-        let total_count: i32 = total.to_string().parse::<i64>().unwrap_or(0) as i32;
-
-        Ok(total_count)
+        let data: PublicRoomsResponse = response.json().await?;
+        
+        Ok(data.total_room_count_estimate.unwrap_or(0) as i32)
     }
 
     async fn fetch_well_known_client_info(
@@ -159,20 +199,24 @@ impl MatrixService {
     pub async fn get_server_version(
         server: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let server_url = format!("https://{}", server);
+        let server_url = format!("https://{}/_matrix/client/versions", server);
 
-        let request = get_supported_versions::Request::new();
+        let http_client = get_http_client();
 
-        let client = Client::builder()
-            .homeserver_url(&server_url)
-            .build()
-            .await?;
+        let response = http_client.get(&server_url).send().await?;
 
-        let response = client.send(request).await?;
+        if !response.status().is_success() {
+            return Err("Failed to get server version".into());
+        }
 
-        let versions: Vec<String> = response.versions.iter().map(|v| v.to_string()).collect();
+        #[derive(Deserialize)]
+        struct VersionsResponse {
+            versions: Option<Vec<String>>,
+        }
 
-        Ok(versions.join(", "))
+        let data: VersionsResponse = response.json().await?;
+        
+        Ok(data.versions.unwrap_or_default().join(", "))
     }
 
     pub async fn get_federation_version(
@@ -262,7 +306,7 @@ mod tests {
     fn test_discovered_server_info_with_values() {
         let info = DiscoveredServerInfo {
             name: Some("Test Server".to_string()),
-            description: Some("A test Matrix server".to_string()),
+            description: Some("A test server".to_string()),
             logo_url: Some("https://test.org/logo.png".to_string()),
             theme: Some("dark".to_string()),
             registration_open: Some(true),
@@ -274,7 +318,7 @@ mod tests {
         };
 
         assert_eq!(info.name, Some("Test Server".to_string()));
-        assert_eq!(info.description, Some("A test Matrix server".to_string()));
+        assert_eq!(info.description, Some("A test server".to_string()));
         assert_eq!(info.logo_url, Some("https://test.org/logo.png".to_string()));
         assert_eq!(info.theme, Some("dark".to_string()));
         assert_eq!(info.registration_open, Some(true));

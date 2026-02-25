@@ -2,9 +2,7 @@ use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
-use prometheus_client::registry::Registry;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct EndpointLabels {
@@ -26,54 +24,16 @@ pub struct Metrics {
     pub servers_online: Gauge,
     pub servers_offline: Gauge,
     pub discovery_errors: Counter,
-    pub registry: Registry,
 }
 
 impl Metrics {
     pub fn new() -> Arc<RwLock<Metrics>> {
-        let mut registry = Registry::default();
-
         let http_requests_total = Family::default();
-        registry.register(
-            "http_requests_total",
-            "Total number of HTTP requests",
-            http_requests_total.clone(),
-        );
-
         let cache_operations = Family::default();
-        registry.register(
-            "cache_operations_total",
-            "Total number of cache operations",
-            cache_operations.clone(),
-        );
-
         let servers_indexed = Gauge::default();
-        registry.register(
-            "servers_indexed",
-            "Number of indexed servers",
-            servers_indexed.clone(),
-        );
-
         let servers_online = Gauge::default();
-        registry.register(
-            "servers_online",
-            "Number of online servers",
-            servers_online.clone(),
-        );
-
         let servers_offline = Gauge::default();
-        registry.register(
-            "servers_offline",
-            "Number of offline servers",
-            servers_offline.clone(),
-        );
-
         let discovery_errors = Counter::default();
-        registry.register(
-            "discovery_errors_total",
-            "Total number of discovery errors",
-            discovery_errors.clone(),
-        );
 
         Arc::new(RwLock::new(Metrics {
             http_requests_total,
@@ -82,7 +42,6 @@ impl Metrics {
             servers_online,
             servers_offline,
             discovery_errors,
-            registry,
         }))
     }
 
