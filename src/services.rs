@@ -60,10 +60,8 @@ impl MatrixService {
         let server_url = format!("https://{}", server);
         let http_client = get_http_client();
 
-        let response = http_client
-            .get(&format!("{}/_matrix/client/versions", server_url))
-            .send()
-            .await?;
+        let versions_url = format!("{}/_matrix/client/versions", server_url);
+        let response = http_client.get(&versions_url).send().await?;
 
         if response.status().is_success() {
             Ok(())
@@ -77,9 +75,10 @@ impl MatrixService {
     ) -> Result<DiscoveredServerInfo, Box<dyn std::error::Error + Send + Sync>> {
         let server_url = format!("https://{}", domain);
         let http_client = get_http_client();
+        let http_client_clone = http_client.clone();
 
-        let capabilities = Self::get_capabilities(&server_url, &http_client).await;
-        
+        let capabilities = Self::get_capabilities(&server_url, http_client_clone).await;
+
         let registration_open = capabilities
             .as_ref()
             .and_then(|c| c.capabilities.as_ref())
@@ -93,7 +92,10 @@ impl MatrixService {
             .and_then(|r| r.available.as_ref())
             .map(|v| v.join(","));
 
-        let public_rooms_count = Self::get_public_rooms_count(&server_url, &http_client).await.ok();
+        let http_client_clone2 = http_client.clone();
+        let public_rooms_count = Self::get_public_rooms_count(&server_url, http_client_clone2)
+            .await
+            .ok();
 
         let (name, description, logo_url, theme) =
             Self::fetch_well_known_client_info(domain).await?;
@@ -118,7 +120,7 @@ impl MatrixService {
 
     async fn get_capabilities(
         server_url: &str,
-        http_client: &reqwest::Client,
+        http_client: reqwest::Client,
     ) -> Option<CapabilitiesResponse> {
         let url = format!("{}/_matrix/client/r0/capabilities", server_url);
         match http_client.get(&url).send().await {
@@ -129,21 +131,18 @@ impl MatrixService {
 
     async fn get_public_rooms_count(
         server_url: &str,
-        http_client: &reqwest::Client,
+        http_client: reqwest::Client,
     ) -> Result<i32, Box<dyn std::error::Error + Send + Sync>> {
         let url = format!("{}/_matrix/client/r0/publicRooms?limit=1", server_url);
-        
-        let response = http_client
-            .get(&url)
-            .send()
-            .await?;
+
+        let response = http_client.get(&url).send().await?;
 
         if !response.status().is_success() {
             return Err("Failed to get public rooms".into());
         }
 
         let data: PublicRoomsResponse = response.json().await?;
-        
+
         Ok(data.total_room_count_estimate.unwrap_or(0) as i32)
     }
 
@@ -215,7 +214,7 @@ impl MatrixService {
         }
 
         let data: VersionsResponse = response.json().await?;
-        
+
         Ok(data.versions.unwrap_or_default().join(", "))
     }
 

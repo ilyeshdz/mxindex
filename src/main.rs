@@ -1,6 +1,6 @@
 use rocket::fairing::AdHoc;
-use rocket::Rocket;
 use rocket::Build;
+use rocket::Rocket;
 use rocket_okapi::openapi;
 use std::sync::{Arc, RwLock};
 
@@ -31,9 +31,7 @@ use app::AppState;
 
 #[openapi]
 #[get("/metrics")]
-fn metrics_endpoint(
-    metrics: &rocket::State<Arc<RwLock<Metrics>>>,
-) -> String {
+fn metrics_endpoint(metrics: &rocket::State<Arc<RwLock<Metrics>>>) -> String {
     let metrics = metrics.read().unwrap();
     metrics.encode()
 }
@@ -71,10 +69,7 @@ fn rocket() -> Rocket<Build> {
             Box::pin(async move {
                 match cache.connect(&redis_url).await {
                     Ok(_) => info!("Connected to Redis at {}", redis_url),
-                    Err(e) => warn!(
-                        "Failed to connect to Redis: {}. Caching disabled.",
-                        e
-                    ),
+                    Err(e) => warn!("Failed to connect to Redis: {}. Caching disabled.", e),
                 }
             })
         }))

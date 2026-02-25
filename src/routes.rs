@@ -1,18 +1,16 @@
 use crate::app::AppState;
-use crate::db::{
-    ServerFilter, get_filtered_servers, get_server_by_domain, insert_server,
-};
+use crate::db::{get_filtered_servers, get_server_by_domain, insert_server, ServerFilter};
 use crate::federation_discovery::FederationDiscovery;
 use crate::models::{
     ApiInfo, CreateServerRequest, ErrorResponse, PaginatedServersResponse, ServerInfo,
     ServerResponse,
 };
 use crate::services::MatrixService;
-use rocket::State;
-use rocket::serde::json::Json;
-use rocket_okapi::openapi;
 use diesel::r2d2::{ConnectionManager, PooledConnection};
 use diesel::PgConnection;
+use rocket::serde::json::Json;
+use rocket::State;
+use rocket_okapi::openapi;
 
 const CACHE_TTL_SHORT: usize = 60;
 const CACHE_TTL_MEDIUM: usize = 300;
@@ -36,12 +34,12 @@ pub fn index() -> Json<ApiInfo> {
 #[get("/health")]
 pub async fn health(state: &State<AppState>) -> Json<serde_json::Value> {
     let db_healthy = state.db_pool.get().is_ok();
-    
+
     let health_status = serde_json::json!({
         "status": if db_healthy { "healthy" } else { "unhealthy" },
         "database": if db_healthy { "ok" } else { "error" },
     });
-    
+
     Json(health_status)
 }
 
@@ -109,11 +107,13 @@ pub async fn add_server(
         }));
     }
 
-    let mut conn = state.db_pool.get().map_err(|e| Json(ErrorResponse {
-        error: "pool_error".to_string(),
-        message: format!("Failed to get DB connection: {}", e),
-    }))?;
-    
+    let mut conn = state.db_pool.get().map_err(|e| {
+        Json(ErrorResponse {
+            error: "pool_error".to_string(),
+            message: format!("Failed to get DB connection: {}", e),
+        })
+    })?;
+
     if let Ok(Some(_)) = get_server_by_domain(&mut conn, &request.domain) {
         return Err(Json(ErrorResponse {
             error: "server_exists".to_string(),
@@ -186,35 +186,37 @@ pub async fn list_servers(
         return Ok(Json(cached));
     }
 
-    let mut conn = state.db_pool.get().map_err(|e| Json(ErrorResponse {
-        error: "pool_error".to_string(),
-        message: format!("Failed to get DB connection: {}", e),
-    }))?;
-    
+    let mut conn = state.db_pool.get().map_err(|e| {
+        Json(ErrorResponse {
+            error: "pool_error".to_string(),
+            message: format!("Failed to get DB connection: {}", e),
+        })
+    })?;
+
     let filter = ServerFilter::default();
 
     match get_filtered_servers(&mut conn, &filter) {
         Ok(result) => {
-                    let responses = result
-                        .servers
-                        .into_iter()
-                        .map(|s| ServerResponse {
-                            id: s.id,
-                            domain: s.domain,
-                            name: s.name,
-                            description: s.description,
-                            logo_url: s.logo_url,
-                            theme: s.theme,
-                            registration_open: s.registration_open,
-                            public_rooms_count: s.public_rooms_count,
-                            version: s.version,
-                            federation_version: s.federation_version,
-                            delegated_server: s.delegated_server,
-                            room_versions: s.room_versions,
-                            created_at: s.created_at,
-                            updated_at: s.updated_at,
-                        })
-                        .collect();
+            let responses = result
+                .servers
+                .into_iter()
+                .map(|s| ServerResponse {
+                    id: s.id,
+                    domain: s.domain,
+                    name: s.name,
+                    description: s.description,
+                    logo_url: s.logo_url,
+                    theme: s.theme,
+                    registration_open: s.registration_open,
+                    public_rooms_count: s.public_rooms_count,
+                    version: s.version,
+                    federation_version: s.federation_version,
+                    delegated_server: s.delegated_server,
+                    room_versions: s.room_versions,
+                    created_at: s.created_at,
+                    updated_at: s.updated_at,
+                })
+                .collect();
 
             let response = PaginatedServersResponse {
                 servers: responses,
@@ -273,10 +275,12 @@ pub async fn search_servers(
         return Ok(Json(cached));
     }
 
-    let mut conn = state.db_pool.get().map_err(|e| Json(ErrorResponse {
-        error: "pool_error".to_string(),
-        message: format!("Failed to get DB connection: {}", e),
-    }))?;
+    let mut conn = state.db_pool.get().map_err(|e| {
+        Json(ErrorResponse {
+            error: "pool_error".to_string(),
+            message: format!("Failed to get DB connection: {}", e),
+        })
+    })?;
 
     let filter = ServerFilter {
         search,
@@ -291,26 +295,26 @@ pub async fn search_servers(
 
     match get_filtered_servers(&mut conn, &filter) {
         Ok(result) => {
-                    let responses = result
-                        .servers
-                        .into_iter()
-                        .map(|s| ServerResponse {
-                            id: s.id,
-                            domain: s.domain,
-                            name: s.name,
-                            description: s.description,
-                            logo_url: s.logo_url,
-                            theme: s.theme,
-                            registration_open: s.registration_open,
-                            public_rooms_count: s.public_rooms_count,
-                            version: s.version,
-                            federation_version: s.federation_version,
-                            delegated_server: s.delegated_server,
-                            room_versions: s.room_versions,
-                            created_at: s.created_at,
-                            updated_at: s.updated_at,
-                        })
-                        .collect();
+            let responses = result
+                .servers
+                .into_iter()
+                .map(|s| ServerResponse {
+                    id: s.id,
+                    domain: s.domain,
+                    name: s.name,
+                    description: s.description,
+                    logo_url: s.logo_url,
+                    theme: s.theme,
+                    registration_open: s.registration_open,
+                    public_rooms_count: s.public_rooms_count,
+                    version: s.version,
+                    federation_version: s.federation_version,
+                    delegated_server: s.delegated_server,
+                    room_versions: s.room_versions,
+                    created_at: s.created_at,
+                    updated_at: s.updated_at,
+                })
+                .collect();
 
             let response = PaginatedServersResponse {
                 servers: responses,
@@ -424,7 +428,7 @@ pub async fn discover_federation(
     state: &rocket::State<AppState>,
 ) -> Result<Json<DiscoveryResponse>, Json<ErrorResponse>> {
     let discovery = FederationDiscovery::new(state.db_pool.clone());
-    
+
     match discovery.start_discovery().await {
         Ok(count) => Ok(Json(DiscoveryResponse {
             discovered: count,

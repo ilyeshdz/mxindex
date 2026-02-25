@@ -67,25 +67,33 @@ impl FederationDiscovery {
                 break;
             }
 
-            info!("Discovery round: checking {} servers", servers_to_check.len());
+            info!(
+                "Discovery round: checking {} servers",
+                servers_to_check.len()
+            );
 
             let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
-            
-            let results: Vec<(String, Result<HashSet<String>, Box<dyn std::error::Error + Send + Sync>>)> = 
-                stream::iter(servers_to_check.clone())
+
+            #[allow(clippy::type_complexity)]
+            let results: Vec<(
+                String,
+                Result<HashSet<String>, Box<dyn std::error::Error + Send + Sync>>,
+            )> = stream::iter(servers_to_check.clone())
                 .map(|server| {
                     let semaphore = semaphore.clone();
                     async move {
                         let _permit = semaphore.acquire().await.expect("Failed to acquire permit");
                         let result = tokio::time::timeout(
                             std::time::Duration::from_secs(10),
-                            Self::discover_servers_from_federation(&server)
-                        ).await;
+                            Self::discover_servers_from_federation(&server),
+                        )
+                        .await;
                         match result {
                             Ok(Ok(servers)) => (server, Ok(servers)),
                             Ok(Err(e)) => (server, Err(e)),
                             Err(_) => {
-                                let err: Box<dyn std::error::Error + Send + Sync> = "Timeout".into();
+                                let err: Box<dyn std::error::Error + Send + Sync> =
+                                    "Timeout".into();
                                 (server, Err(err))
                             }
                         }
@@ -104,7 +112,7 @@ impl FederationDiscovery {
                             if !discovered.contains(&new_server) {
                                 discovered.insert(new_server.clone());
                                 servers_to_check.push(new_server.clone());
-                                
+
                                 if self.add_server_to_index(&new_server).await {
                                     added_count += 1;
                                 }
@@ -122,7 +130,10 @@ impl FederationDiscovery {
             }
         }
 
-        info!("Federation discovery complete. Added {} new servers", added_count);
+        info!(
+            "Federation discovery complete. Added {} new servers",
+            added_count
+        );
         Ok(added_count)
     }
 
@@ -245,11 +256,17 @@ impl FederationDiscovery {
         }
     }
 
-    async fn server_exists_in_db(&self, domain: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    async fn server_exists_in_db(
+        &self,
+        domain: &str,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         use crate::schema::servers::dsl::servers;
 
         let mut conn = self.db_pool.get()?;
-        let count = servers.filter(crate::schema::servers::domain.eq(domain)).count().get_result::<i64>(&mut conn)?;
+        let count = servers
+            .filter(crate::schema::servers::domain.eq(domain))
+            .count()
+            .get_result::<i64>(&mut conn)?;
         Ok(count > 0)
     }
 }

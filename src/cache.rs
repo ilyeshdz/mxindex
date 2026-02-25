@@ -1,6 +1,6 @@
 use redis::AsyncCommands;
-use redis::{Client, RedisError, aio::ConnectionManager};
-use serde::{Serialize, de::DeserializeOwned};
+use redis::{aio::ConnectionManager, Client, RedisError};
+use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
