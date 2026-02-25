@@ -1,6 +1,6 @@
 use crate::app::AppState;
 use crate::db::{
-    ServerFilter, get_filtered_servers, get_server_by_domain, insert_server, DbPool,
+    ServerFilter, get_filtered_servers, get_server_by_domain, insert_server,
 };
 use crate::federation_discovery::FederationDiscovery;
 use crate::models::{

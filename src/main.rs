@@ -21,9 +21,8 @@ mod services;
 
 use cache::Cache;
 use db::{create_pool, establish_connection, run_migrations};
-use federation_discovery::FederationDiscovery;
 use metrics::Metrics;
-use rate_limit::{rate_limiter_from_config, RateLimiterState};
+use rate_limit::rate_limiter_from_config;
 use rocket_okapi::openapi_get_routes;
 use rocket_okapi::swagger_ui::{make_swagger_ui, SwaggerUIConfig};
 use tracing::{info, warn};

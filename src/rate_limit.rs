@@ -3,11 +3,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+#[allow(dead_code)]
 pub struct RateLimiterState {
-    requests_per_minute: u64,
-    client_requests: Arc<Mutex<HashMap<String, (u64, Instant)>>>,
+    pub requests_per_minute: u64,
+    pub client_requests: Arc<Mutex<HashMap<String, (u64, Instant)>>>,
 }
 
+#[allow(dead_code)]
 impl RateLimiterState {
     pub fn new(requests_per_minute: u32) -> Self {
         Self {
@@ -16,6 +18,7 @@ impl RateLimiterState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn check(&self, client_id: &str) -> Result<(), RateLimitError> {
         if self.requests_per_minute == 0 {
             return Ok(());
@@ -49,6 +52,7 @@ impl RateLimiterState {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct RateLimitError;
 
